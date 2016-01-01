@@ -26,7 +26,7 @@ A copy of the GPL, as well as other important copyright and licensing informatio
 
 namespace libaudioverse_implementation {
 
-Simulation::Simulation(unsigned int sr, unsigned int blockSize, unsigned int mixahead): ExternalObject(Lav_OBJTYPE_SIMULATION) {
+Simulation::Simulation(unsigned int sr, unsigned int blockSize, unsigned int mixahead): Job(Lav_OBJTYPE_SIMULATION) {
 	if(blockSize%4 || blockSize== 0) ERROR(Lav_ERROR_RANGE, "Block size must be a nonzero multiple of 4."); //only afe to have this be a multiple of four.
 	this->sr = (float)sr;
 	this->block_size = blockSize;
@@ -101,6 +101,10 @@ void Simulation::doMaintenance() {
 
 void Simulation::setOutputDevice(int index, int channels, float minLatency, float startLatency, float maxLatency) {
 	if(index < -1) ERROR(Lav_ERROR_RANGE, "Index -1 is default; all other negative numbers are invalid.");
+	if(output_device) {
+		output_device->stop();
+	}
+	std::lock_guard<std::recursive_mutex> g(mutex);
 	auto factory = getOutputDeviceFactory();
 	if(factory == nullptr) ERROR(Lav_ERROR_CANNOT_INIT_AUDIO, "Failed to get output device factory.");
 	auto sptr = std::static_pointer_cast<Simulation>(shared_from_this());
@@ -210,18 +214,6 @@ int Simulation::getThreads() {
 	return threads;
 }
 
-//Conform to job:
-void Simulation::visitDependencies(std::function<void(std::shared_ptr<Job>&)> &pred) {
-	for(auto &i: final_output_connection->getConnectedNodes()) {
-		auto n = std::dynamic_pointer_cast<Job>(i->shared_from_this());
-		if(n) pred(n);
-	}
-	filterWeakPointers(always_playing_nodes, [&pred](std::shared_ptr<Node> &n) {
-		auto j = std::static_pointer_cast<Job>(n);
-		pred(j);
-	});
-}
-
 void Simulation::invalidatePlan() {
 	planner->invalidatePlan();
 }
@@ -263,7 +255,7 @@ Lav_PUBLIC_FUNCTION LavError Lav_simulationGetSr(LavHandle simulationHandle, int
 Lav_PUBLIC_FUNCTION LavError Lav_simulationSetOutputDevice(LavHandle simulationHandle, int index, int channels, float minLatency, float startLatency, float maxLatency) {
 	PUB_BEGIN
 	auto sim = incomingObject<Simulation>(simulationHandle);
-	LOCK(*sim);
+	//This is threadsafe and needs to be entered properly so it can make sure we dont' edadlock in audio_io.
 	sim->setOutputDevice(index, channels, minLatency, startLatency, maxLatency);
 	PUB_END
 }

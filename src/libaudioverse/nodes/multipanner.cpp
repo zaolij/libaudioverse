@@ -52,13 +52,6 @@ void MultipannerNode::configureForwardedProperties() {
 	amplitude_panner->forwardProperty(Lav_PANNER_SHOULD_CROSSFADE, us, Lav_PANNER_SHOULD_CROSSFADE);
 	hrtf_panner->forwardProperty(Lav_PANNER_SHOULD_CROSSFADE, us, Lav_PANNER_SHOULD_CROSSFADE);
 	//strategy is already only us.
-	//hrtf specifics:
-	hrtf_panner->forwardProperty(Lav_PANNER_SPEED_OF_SOUND, us, Lav_PANNER_SPEED_OF_SOUND);
-	hrtf_panner->forwardProperty(Lav_PANNER_DISTANCE, us, Lav_PANNER_DISTANCE);
-	hrtf_panner->forwardProperty(Lav_PANNER_HEAD_WIDTH, us, Lav_PANNER_HEAD_WIDTH);
-	hrtf_panner->forwardProperty(Lav_PANNER_EAR_POSITION, us, Lav_PANNER_EAR_POSITION);
-	hrtf_panner->forwardProperty(Lav_PANNER_APPLY_ITD, us, Lav_PANNER_APPLY_ITD);
-	hrtf_panner->forwardProperty(Lav_PANNER_USE_LINEAR_PHASE, us, Lav_PANNER_USE_LINEAR_PHASE);
 }
 
 void MultipannerNode::strategyChanged() {
@@ -117,12 +110,7 @@ Lav_PUBLIC_FUNCTION LavError Lav_createMultipannerNode(LavHandle simulationHandl
 	PUB_BEGIN
 	auto simulation = incomingObject<Simulation>(simulationHandle);
 	LOCK(*simulation);
-	std::shared_ptr<HrtfData> hrtf = std::make_shared<HrtfData>();
-	if(std::string(hrtfPath) == "default") {
-		hrtf->loadFromDefault(simulation->getSr());
-	} else {
-		hrtf->loadFromFile(hrtfPath, simulation->getSr());
-	}
+	auto hrtf = createHrtfFromString(hrtfPath, simulation->getSr());
 	*destination = outgoingObject<Node>(createMultipannerNode(simulation, hrtf));
 	PUB_END
 }

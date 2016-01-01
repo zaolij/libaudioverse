@@ -19,7 +19,7 @@ A copy of the GPL, as well as other important copyright and licensing informatio
 #define ITERATIONS 200
 float storage[BLOCK_SIZE*2] = {0};
 //This is a big block of data so we can profile buffers.
-#define BUFFER_SIZE 32768
+#define BUFFER_SIZE 32768*4
 float buffer[BUFFER_SIZE] = {0.0f};
 
 #define ERRCHECK(x) do {\
@@ -62,6 +62,7 @@ LavError createBuffer(LavHandle sim, LavHandle& h) {
 
 std::tuple<std::string, int, std::function<std::vector<LavHandle>(LavHandle, int)>> to_profile[] = {
 ENTRY("sine", 1000, Lav_createSineNode(sim, &h)),
+ENTRY("Blit", 1000, Lav_createBlitNode(sim, &h)),
 ENTRY("4-channel buffer", 100, createBuffer(sim, h)),
 ENTRY("crossfading delay line", 1000, Lav_createCrossfadingDelayNode(sim, 0.1, 1, &h)),
 ENTRY("biquad", 1000, Lav_createBiquadNode(sim, 1, &h)),
@@ -73,7 +74,6 @@ ENTRY("hard limiter", 1000, Lav_createHardLimiterNode(sim, 2, &h)),
 ENTRY("channel splitter", 1000, Lav_createChannelSplitterNode(sim, 10, &h)),
 ENTRY("channel merger", 1000, Lav_createChannelMergerNode(sim, 10, &h)),
 ENTRY("noise", 100, Lav_createNoiseNode(sim, &h)),
-ENTRY("square", 500, Lav_createSquareNode(sim, &h)),
 ENTRY("ringmod", 1000, Lav_createRingmodNode(sim, &h)),
 ENTRY("16x16 FDN", 1, Lav_createFeedbackDelayNetworkNode(sim, 1.0f, 16, &h)),
 ENTRY("32x32 FDN", 1, Lav_createFeedbackDelayNetworkNode(sim, 1.0f, 32, &h)),

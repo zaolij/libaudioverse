@@ -15,6 +15,7 @@ class BlockConvolver {
 	//Note: this function zeros the history if the new response has a different length.
 	void setResponse(int length, float* newResponse);
 	void convolve(float* input, float* output);
+	void reset();
 	private:
 	float* response = nullptr, *history = nullptr;
 	int block_size = 0, response_length = 0;
@@ -36,6 +37,7 @@ class FftConvolver {
 	//This fft will be valid until either getFft or convolve is called.
 	//This exists for a very very few special cases in Libaudioverse.
 	kiss_fft_cpx* getFft(float* input);
+	void reset();
 	private:
 	int block_size = 0, fft_size = 0, tail_size= 0, workspace_size = 0;
 	float*workspace = nullptr, *tail = nullptr;

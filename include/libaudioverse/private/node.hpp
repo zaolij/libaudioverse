@@ -4,7 +4,6 @@ A copy of the GPL, as well as other important copyright and licensing informatio
 #pragma once
 #include "../libaudioverse.h"
 #include "properties.hpp"
-#include "events.hpp"
 #include "memory.hpp"
 #include "connections.hpp"
 #include <map>
@@ -28,7 +27,7 @@ class PropertyBackrefComparer {
 
 
 /**Things all Libaudioverse nodes have.*/
-class Node: public ExternalObject, public Job {
+class Node: public Job {
 	public:
 	Node(int type, std::shared_ptr<Simulation> simulation, unsigned int numInputBuffers, unsigned int numOutputBuffers);
 	virtual ~Node();
@@ -100,9 +99,7 @@ class Node: public ExternalObject, public Job {
 	void removePropertyBackref(int ourProperty, std::shared_ptr<Node> toNode, int toProperty);
 	//call pred on all the properties that immediately forward to which.
 	void visitPropertyBackrefs(int which, std::function<void(Property&)> pred);
-	
-	//event helper methods.
-	Event& getEvent(int which);
+
 
 	//meet the lockable concept.
 	//Warning: these aren't virtual because they're just so that our macro works; all locking still forwards to devices.
@@ -116,14 +113,10 @@ class Node: public ExternalObject, public Job {
 	virtual void resize(int newInputCount, int newOutputCount);
 
 	//Conform to Job.
-	virtual void visitDependencies(std::function<void(std::shared_ptr<Job>&)> &pred) override;
 	virtual void execute();
 
-	//This is the actual implementation of visitDependencies.
-	//visitDependencies will only call this function if the state is unpaused.
-	//This exists for cycle detection.
-	virtual void visitDependenciesUnconditional(std::function<void(std::shared_ptr<Job>&)> &pred);
-	
+	//True if we're paused.
+	bool canCull() override;
 	protected:
 	std::shared_ptr<Simulation> simulation = nullptr;
 	std::map<int, Property> properties;
@@ -132,7 +125,6 @@ class Node: public ExternalObject, public Job {
 	//These are the back references, used for property callbacks.
 	std::map<int, std::set<std::tuple<std::weak_ptr<Node>, int>, PropertyBackrefComparer>> forwarded_property_backrefs;
 	
-	std::map<int, Event> events;
 	std::vector<float*> input_buffers;
 	std::vector<float*> output_buffers;
 	std::vector<std::shared_ptr<InputConnection>> input_connections;
@@ -146,6 +138,9 @@ class Node: public ExternalObject, public Job {
 	//we are never allowed to copy.
 	Node(const Node&) = delete;
 	Node& operator=(const Node&) = delete;
+	
+	template<typename JobT, typename CallableT, typename... ArgsT>
+	friend void nodeVisitDependencies(JobT&& start, CallableT&& callable, ArgsT&&... args);
 };
 
 /*needed for things that wish to encapsulate and manage nodes that the public API isn't supposed to see.
@@ -166,15 +161,15 @@ class SubgraphNode: public Node {
 	int getOutputBufferCount() override;
 	float** getOutputBufferArray() override;
 
-	//Our dependency is our single output node.
-	void visitDependenciesUnconditional(std::function<void(std::shared_ptr<Job>&)> &pred) override;
-
 	//Override tick because we can't try to use connections.
 	//We don't have proper input buffers, default tick will override who knows what.
 	void tick() override;
 	
 	protected:
 	std::shared_ptr<Node> subgraph_input, subgraph_output;
+	
+	template<typename JobT, typename CallableT, typename... ArgsT>
+	friend void subgraphNodeVisitDependencies(JobT&& start, CallableT &&callable, ArgsT&&... args);
 };
 
 /**This is the creation template for a node.

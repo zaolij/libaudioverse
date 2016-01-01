@@ -55,7 +55,7 @@ void CrossfaderNode::finishCrossfade() {
 	current_weight = 1.0f;
 	target_weight = 0.0f;
 	crossfading = false;
-	getEvent(Lav_CROSSFADER_FINISHED_EVENT).fire();
+	simulation->enqueueTask([=] () {(*finished_callback)();});
 }
 
 void CrossfaderNode::process() {
@@ -93,6 +93,16 @@ Lav_PUBLIC_FUNCTION LavError Lav_crossfaderNodeCrossfade(LavHandle nodeHandle, f
 	auto n = incomingObject<CrossfaderNode>(nodeHandle);
 	LOCK(*n);
 	n->crossfade(duration, input);
+	PUB_END
+}
+
+Lav_PUBLIC_FUNCTION LavError Lav_crossfaderNodeSetFinishedCallback(LavHandle nodeHandle, LavParameterlessCallback callback, void* userdata) {
+	PUB_BEGIN
+	auto n = incomingObject<CrossfaderNode>(nodeHandle);
+	if(callback) {
+		n->finished_callback->setCallback(wrapParameterlessCallback(n, callback, userdata));
+	}
+	else n->finished_callback->clear();
 	PUB_END
 }
 

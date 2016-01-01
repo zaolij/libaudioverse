@@ -7,6 +7,7 @@ A copy of the GPL, as well as other important copyright and licensing informatio
 #include <libaudioverse/nodes/amplitude_panner.hpp>
 #include <libaudioverse/nodes/multipanner.hpp>
 #include <libaudioverse/nodes/gain.hpp>
+#include <libaudioverse/nodes/biquad.hpp>
 #include <libaudioverse/private/properties.hpp>
 #include <libaudioverse/private/macros.hpp>
 #include <libaudioverse/private/constants.hpp>
@@ -31,7 +32,13 @@ SourceNode::SourceNode(std::shared_ptr<Simulation> simulation, std::shared_ptr<E
 	input->resize(1, 1);
 	input->appendInputConnection(0, 1);
 	input->appendOutputConnection(0, 1);
+	occluder = createBiquadNode(simulation, 1);
+	occluder->getProperty(Lav_BIQUAD_FILTER_TYPE).setIntValue(Lav_BIQUAD_TYPE_HIGHSHELF);
+	input->connect(0, occluder, 0);
+	handleOcclusion(); //Make sure we initialize as unoccluded.	
+	
 	panner_node = createMultipannerNode(simulation, environment->getHrtf());
+	occluder->connect(0, panner_node, 0);
 	panner_node->connect(0, environment->getOutputNode(), 0);
 	this->environment = environment;
 	//we have to read off these defaults manually, and it must always be the last thing in the constructor.
@@ -40,10 +47,9 @@ SourceNode::SourceNode(std::shared_ptr<Simulation> simulation, std::shared_ptr<E
 	getProperty(Lav_SOURCE_PANNER_STRATEGY).setIntValue(environment->getProperty(Lav_ENVIRONMENT_DEFAULT_PANNER_STRATEGY).getIntValue());
 	getProperty(Lav_SOURCE_SIZE).setFloatValue(environment->getProperty(Lav_ENVIRONMENT_DEFAULT_SIZE).getFloatValue());
 	getProperty(Lav_SOURCE_REVERB_DISTANCE).setFloatValue(environment->getProperty(Lav_ENVIRONMENT_DEFAULT_REVERB_DISTANCE).getFloatValue());
-	input->connect(0, panner_node, 0);
 	setInputNode(input);
 	
-	//Configure tyhe effect send panners.
+	//Configure the effect send panners.
 	std::shared_ptr<AmplitudePannerNode> p;
 	p = std::static_pointer_cast<AmplitudePannerNode>(createAmplitudePannerNode(simulation));
 	p->configureStandardChannelMap(2);
@@ -57,8 +63,8 @@ SourceNode::SourceNode(std::shared_ptr<Simulation> simulation, std::shared_ptr<E
 	p = std::static_pointer_cast<AmplitudePannerNode>(createAmplitudePannerNode(simulation));
 	p->configureStandardChannelMap(8);
 	effect_panners.push_back(p);
-	//Actually connect the input to them.
-	for(auto &i: effect_panners) input->connect(0, i, 0);
+	//Actually connect the occluder to them.
+	for(auto &i: effect_panners) occluder->connect(0, i, 0);
 }
 
 void SourceNode::forwardProperties() {
@@ -66,6 +72,9 @@ void SourceNode::forwardProperties() {
 	panner_node->forwardProperty(Lav_PANNER_STRATEGY, strong, Lav_SOURCE_PANNER_STRATEGY);
 	panner_node->forwardProperty(Lav_NODE_STATE, strong, Lav_NODE_STATE);
 	//All the other exit points can be handled by forwarding states of the effect gains.
+	
+	//Occlusion callback.
+	getProperty(Lav_SOURCE_OCCLUSION).setPostChangedCallback([&] () {handleOcclusion();});
 }
 
 std::shared_ptr<Node> createSourceNode(std::shared_ptr<Simulation> simulation, std::shared_ptr<EnvironmentNode> environment) {
@@ -82,6 +91,8 @@ SourceNode::~SourceNode() {
 	for(auto &i: effect_panners) i->isolate();
 	for(auto &i: outgoing_effects) i.second->isolate();
 	for(auto &i: outgoing_effects_reverb) i.second->isolate();
+	input->isolate();
+	occluder->isolate();
 }
 
 void SourceNode::feedEffect(int which) {
@@ -127,6 +138,7 @@ std::shared_ptr<Node> SourceNode::getPannerForEffectChannels(int channels) {
 void SourceNode::reset() {
 	panner_node->reset();
 	input->reset();
+	occluder->reset();
 	for(auto &i: outgoing_effects) i.second->reset();
 	for(auto &i: outgoing_effects_reverb) i.second->reset();
 	for(auto &i: effect_panners) i->reset();
@@ -195,7 +207,6 @@ void SourceNode::update(EnvironmentInfo &env) {
 	//Set the output panner, a multipanner.
 	panner_node->getProperty(Lav_PANNER_AZIMUTH).setFloatValue(azimuth);
 	panner_node->getProperty(Lav_PANNER_ELEVATION).setFloatValue(elevation);
-	panner_node->getProperty(Lav_PANNER_DISTANCE).setFloatValue(distance);
 	panner_node ->getProperty(Lav_NODE_MUL).setFloatValue(dryGain);
 	//Set the panners for effect sends; note that these are not multipanners and only have azimuth and elevation.
 	for(auto &i: effect_panners) {
@@ -237,10 +248,24 @@ void SourceNode::handleStateUpdates(bool shouldCull) {
 	culled = shouldCull;
 }
 
-void SourceNode::visitDependencies(std::function<void(std::shared_ptr<Job>&)> &pred) {
-	if(getState() != Lav_NODESTATE_PAUSED && culled) input->visitDependenciesUnconditional(pred);
-	//The rest is handled via the environment, which goes through the panner itself.
+void 	SourceNode::handleOcclusion() {
+	//We need a db gain and a frequency from the linear occlusion value.
+	float occlusionPercent = getProperty(Lav_SOURCE_OCCLUSION).getFloatValue();
+	//-70 DB is fully occluded.
+	float dbgain = occlusionPercent*-70.0f;
+	//We get the frequency via an exponential function, so that occlusion sounds roughly linear.
+	//We scale this to be on the range 200 to 800.
+	//It appears that E isn't in math.h on all compilers,  so we use exp(1) for it.
+	//Note: e^0 is 1, e^1 is e.
+	float frequencyScaleFactor = 1000.0/exp(1);
+	//Note: 0 must be furthest away from the origin, unlike frequency.
+	float scaledFrequency = frequencyScaleFactor*exp(1-occlusionPercent);
+	//Set it.
+	occluder->getProperty(Lav_BIQUAD_DBGAIN).setFloatValue(dbgain);
+	occluder->getProperty(Lav_BIQUAD_FREQUENCY).setFloatValue(scaledFrequency);
 }
+
+//Begin public API.
 
 Lav_PUBLIC_FUNCTION LavError Lav_createSourceNode(LavHandle simulationHandle, LavHandle environmentHandle, LavHandle* destination) {
 	PUB_BEGIN

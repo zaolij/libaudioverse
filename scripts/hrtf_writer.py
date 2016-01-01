@@ -5,6 +5,8 @@ import numpy.fft as fft
 import struct
 import enum
 import itertools
+import uuid
+
 
 EndiannessTypes=enum.Enum("EndiannessTypes", "big little")
 
@@ -12,8 +14,9 @@ class HrtfWriter(object):
     endianness_marker = 1
     #The odd syntax here lets us put comments in.
     format_template="".join([
-    "{}", #endianness and size indicator. This is platform-dependent.
-    "2i", #Endianness marker, samplerate.
+    "{}", #endianness and size indicator. This is platform-dependent and doesn't add anything to the string.
+    "16B", #The uuid.
+    "2i", #Endianness check marker, samplerate.
     "4i", #Response count, number of elevations, min elevation, max elevation.
     "{}", #Hole for the azimuth counts.
     "i", #Length of each response in samples.
@@ -52,22 +55,23 @@ class HrtfWriter(object):
         self.response_length = response_lengths[0]
         self.response_count=sum((len(elev) for elev in self.responses))
         if print_progress:
-            print "basic sanity checks passed and HRTF Writer initialized."
-            print "Dataset has {} responses and {} elevations".format(self.response_length, self.elevation_count)
-            print "sr =", self.samplerate
-            print self.elevation_count, "elevations."
-            print "Min elevation =", self.min_elevation, "max elevation = ", self.max_elevation
-            print "Azimuth counts: {}".format(self.azimuth_counts)
+            print("basic sanity checks passed and HRTF Writer initialized.")
+            print("Dataset has {} responses and {} elevations".format(self.response_length, self.elevation_count))
+            print("sr =", self.samplerate)
+            print(self.elevation_count, "elevations.")
+            print("Min elevation =", self.min_elevation, "max elevation = ", self.max_elevation)
+            print("Azimuth counts: {}".format(self.azimuth_counts))
 
     def make_format_string(self):
         endianness_token= "<" if self.endianness == EndiannessTypes.little else ">"
-        self.format_string=self.format_template.format(endianness_token, str(len(self.azimuth_counts))+"i", str(self.response_count*self.response_length)+"f")
+        self.format_string=self.format_template.format(endianness_token, str(len(self.azimuth_counts))+"i", str(self.response_count*self.response_length)+"f").encode('ascii')
         if self.print_progress:
-            print "Format string:", self.format_string
+            print("Format string:", self.format_string)
 
     def pack_data(self):
         self.make_format_string()
         iter = itertools.chain(
+        uuid.uuid4().bytes, #Generate a 16-byte uuid.
         [self.endianness_marker, self.samplerate, self.response_count,
         self.elevation_count, self.min_elevation, self.max_elevation],
         self.azimuth_counts,
@@ -76,19 +80,19 @@ class HrtfWriter(object):
         data=list(iter)
         self.packed_data = struct.pack(self.format_string, *data)
         if self.print_progress:
-            print "Data packed. Total size is {}.".format(len(self.packed_data))
+            print("Data packed. Total size is {}.".format(len(self.packed_data)))
 
     def write_file(self, path):
         if not hasattr(self, 'packed_data'):
             raise ValueError("Must pack data first.")
-        with file(path, "wb") as f:
+        with open(path, "wb") as f:
             f.write(self.packed_data)
         if self.print_progress:
-            print "Data written to {}".format(path)
+            print("Data written to {}".format(path))
 
     def data_to_float64(self):
         if self.print_progress:
-            print "Converting data to float."
+            print("Converting data to float.")
         new_responses = []
         for elev in self.responses:
             new_elev = []
@@ -111,7 +115,7 @@ class HrtfWriter(object):
     def linear_phase(self):
         """Convert all the data to linear phase."""
         if self.print_progress:
-            print "Converting data to linear phase..."
+            print("Converting data to linear phase...")
         new_responses=[]
         for elev in self.responses:
             new_elev=[]
@@ -129,7 +133,7 @@ class HrtfWriter(object):
     def standard_build(self, path):
         """Does a standard build, that is the transformations that should be made on most HRIRs."""
         if self.print_progress:
-            print "Standard build requested."
+            print("Standard build requested.")
         self.data_to_float64()
         self.pack_data()
         self.write_file(path)

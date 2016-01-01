@@ -45,7 +45,6 @@ void FftConvolver::setResponse(int length, float* newResponse) {
 		block_fft=allocArray<kiss_fft_cpx>(fft_size);
 	}
 	memset(workspace, 0, sizeof(float)*workspace_size);
-	memset(tail, 0, sizeof(float)*tail_size);
 	//Store the fft of the response.
 	std::copy(newResponse, newResponse+length, workspace);
 	kiss_fftr(fft, workspace, response_fft);
@@ -84,7 +83,12 @@ void FftConvolver::convolveFft(kiss_fft_cpx *fft, float* output) {
 	//Also copy to the output at the same time.
 	scalarMultiplicationKernel(block_size, 1.0/workspace_size, workspace, output);
 	//Copy out the tail.
-	std::copy(workspace+block_size, workspace+workspace_size, tail);
+		std::copy(workspace+block_size, workspace+workspace_size, tail);
+}
+
+void FftConvolver::reset() {
+	std::fill(workspace, workspace+workspace_size, 0.0f);
+	std::fill(tail, tail+tail_size, 0.0f);
 }
 
 }

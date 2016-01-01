@@ -54,12 +54,6 @@ void PannerBankNode::configureForwardedProperties() {
 		//We handle azimuth and elevation.
 		n->forwardProperty(Lav_PANNER_SHOULD_CROSSFADE, us, Lav_PANNER_SHOULD_CROSSFADE);
 		n->forwardProperty(Lav_PANNER_STRATEGY, us, Lav_PANNER_STRATEGY);
-		n->forwardProperty(Lav_PANNER_SPEED_OF_SOUND, us, Lav_PANNER_SPEED_OF_SOUND);
-		n->forwardProperty(Lav_PANNER_DISTANCE, us, Lav_PANNER_DISTANCE);
-		n->forwardProperty(Lav_PANNER_HEAD_WIDTH, us, Lav_PANNER_HEAD_WIDTH);
-		n->forwardProperty(Lav_PANNER_EAR_POSITION, us, Lav_PANNER_EAR_POSITION);
-		n->forwardProperty(Lav_PANNER_APPLY_ITD, us, Lav_PANNER_APPLY_ITD);
-		n->forwardProperty(Lav_PANNER_USE_LINEAR_PHASE, us, Lav_PANNER_USE_LINEAR_PHASE);
 	}
 }
 
@@ -115,12 +109,7 @@ Lav_PUBLIC_FUNCTION LavError Lav_createPannerBankNode(LavHandle simulationHandle
 	PUB_BEGIN
 	auto simulation = incomingObject<Simulation>(simulationHandle);
 	LOCK(*simulation);
-	std::shared_ptr<HrtfData> hrtf = std::make_shared<HrtfData>();
-	if(std::string(hrtfPath) == "default") {
-		hrtf->loadFromDefault(simulation->getSr());
-	} else {
-		hrtf->loadFromFile(hrtfPath, simulation->getSr());
-	}
+	auto hrtf = createHrtfFromString(hrtfPath, simulation->getSr());
 	*destination = outgoingObject<Node>(createPannerBankNode(simulation, pannerCount, hrtf));
 	PUB_END
 }

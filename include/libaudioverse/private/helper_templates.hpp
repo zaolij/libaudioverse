@@ -13,7 +13,7 @@ template<typename ContainerT, typename CallableT, typename... ArgsT>
 void filter(ContainerT &&container, CallableT &&callable, ArgsT&&... args) {
 	auto cur = container.begin();
 	while(cur != container.end()) {
-		auto removing = callable(*cur, args...);
+		auto removing = callable(*cur, args...) == false;
 		if(removing) cur = container.erase(cur);
 		else cur++;
 	}
@@ -28,7 +28,7 @@ void filterWeakPointers(ContainerT &&container, CallableT &&callable, ArgsT&&...
 	while(cur != container.end()) {
 		auto strong = cur->lock();
 		if(strong) {
-			callable(strong);
+			callable(strong, args...);
 			cur++;
 		}
 		else cur = container.erase(cur);

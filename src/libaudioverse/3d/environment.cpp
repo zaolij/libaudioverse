@@ -104,18 +104,6 @@ void EnvironmentNode::registerSourceForUpdates(std::shared_ptr<SourceNode> sourc
 	simulation->invalidatePlan();
 }
 
-void EnvironmentNode::visitDependenciesUnconditional(std::function<void(std::shared_ptr<Job>&)> &pred) {
-	SubgraphNode::visitDependenciesUnconditional(pred);
-	//Other dependencies: all our sources.
-	for(auto w: sources) {
-		auto n = w.lock();
-		if(n) {
-			auto j = std::static_pointer_cast<Job>(n);
-			pred(j);
-		}
-	}
-}
-
 void EnvironmentNode::playAsync(std::shared_ptr<Buffer> buffer, float x, float y, float z, bool isDry) {
 	auto e = std::static_pointer_cast<EnvironmentNode>(shared_from_this());
 	std::shared_ptr<Node> b;
@@ -126,15 +114,15 @@ void EnvironmentNode::playAsync(std::shared_ptr<Buffer> buffer, float x, float y
 		b = createBufferNode(simulation);
 	}
 	else {
-		std::tie(b, s) = *play_async_source_cache.begin();
-		play_async_source_cache.erase(play_async_source_cache.begin());
+		std::tie(b, s) = play_async_source_cache.back();
+		play_async_source_cache.pop_back();
 		fromCache = true;
 	}
 	b->getProperty(Lav_BUFFER_BUFFER).setBufferValue(buffer);
 	if(fromCache == false) b->connect(0, s, 0);
 	b->getProperty(Lav_BUFFER_POSITION).setDoubleValue(0.0);
 	s->getProperty(Lav_3D_POSITION).setFloat3Value(x, y, z);
-	if(isDry) {
+		if(isDry) {
 		for(int i = 0; i < effect_sends.size(); i++) {
 			s->stopFeedingEffect(i);
 		}
@@ -147,7 +135,12 @@ void EnvironmentNode::playAsync(std::shared_ptr<Buffer> buffer, float x, float y
 	}
 	if(fromCache) s->setState(Lav_NODESTATE_PLAYING);
 	auto simulation = this->simulation;
-	b->getEvent(Lav_BUFFER_END_EVENT).setHandler([b, e, s, simulation] (std::shared_ptr<Node> unused1, void* unused2) mutable {
+	//We've just done a bunch of stuff that invalidates the plan, so maybe we can squeeze in a bit more.
+	//If we update the source, it might cull.  We can then reset it to avoid HRTF crossfading.
+	s->update(environment_info);
+	s->reset(); //Avoid crossfading the hrtf.	
+	//This needs rewriting on whatever we replace events with.
+	/*b->getEvent(Lav_BUFFER_END_EVENT).setHandler([b, e, s, simulation] (std::shared_ptr<Node> unused1, void* unused2) mutable {
 		//Recall that events do not hold locks when fired.
 		//So lock the simulation.
 		LOCK(*simulation);
@@ -155,7 +148,7 @@ void EnvironmentNode::playAsync(std::shared_ptr<Buffer> buffer, float x, float y
 			//Sleep the source, clear the buffer.
 			s->setState(Lav_NODESTATE_PAUSED);
 			b->getProperty(Lav_BUFFER_BUFFER).setBufferValue(nullptr);
-			e->play_async_source_cache.insert(make_tuple(b, s));
+			e->play_async_source_cache.emplace_back(b, s);
 		}
 		else {
 			//Otherwise, let go.
@@ -167,7 +160,7 @@ void EnvironmentNode::playAsync(std::shared_ptr<Buffer> buffer, float x, float y
 		b.reset();
 		s.reset();
 		e.reset();
-	});
+	});*/
 }
 
 std::shared_ptr<Node> EnvironmentNode::getOutputNode() {
@@ -211,12 +204,7 @@ Lav_PUBLIC_FUNCTION LavError Lav_createEnvironmentNode(LavHandle simulationHandl
 	PUB_BEGIN
 	auto simulation = incomingObject<Simulation>(simulationHandle);
 	LOCK(*simulation);
-	auto hrtf = std::make_shared<HrtfData>();
-	if(std::string(hrtfPath) != "default") {
-		hrtf->loadFromFile(hrtfPath, simulation->getSr());
-	} else {
-		hrtf->loadFromDefault(simulation->getSr());
-	}
+	auto hrtf = createHrtfFromString(hrtfPath, simulation->getSr());
 	auto retval = createEnvironmentNode(simulation, hrtf);
 	*destination = outgoingObject<Node>(retval);
 	PUB_END

@@ -89,6 +89,20 @@ properties:
       The maximum amount of audio to be diverted to reverb sends, if any.
       
       Behavior is undefined if this property is ever less than {{"Lav_SOURCE_MIN_REVERB_LEVEL"|property}}.
+  Lav_SOURCE_OCCLUSION:
+    type: float
+    name: occlusion
+    range: [0.0, 1.0]
+    default: 0.0
+    doc_description: |
+      A scalar representing how occluded this source is.
+      
+      This property controls internal filters of the source that make occluded objects sound muffled.
+      A value of 1.0 is a fully occluded source, which will be all but silent; a value of 0.0 has no effect.
+      
+      It is extremely difficult to map occlusion to a physical quantity.
+      In the real world, occlusion depends on mass, density, molecular structure, and a huge number of other factors.
+      Libaudioverse therefore chooses to use this scalar quantity and to attempt to do the right thing.
 extra_functions:
   Lav_sourceNodeFeedEffect:
     doc_description: |
@@ -103,12 +117,13 @@ extra_functions:
 inputs:
   - [1, "The audio to enter the 3D environment."]
 outputs: null
-doc_name: simple source
+doc_name: source
 doc_description: |
   The source node allows the spatialization of sound that passes through it.
   Sources have one input which is mono, to which a node should be connected.
-  the audio from the input is spatialized according both to the source's properties and those on its environment, 
-  and passed directly to the environment.
+  The audio from the input is spatialized according both to the source's properties and those on its environment, and passed directly to the environment.
   Sources have no outputs.
   To hear a source, you must connect its environment to something instead.
   
+  Since the source communicates with the environment through a nonstandard mechanism, environments do not keep their sources alive.
+  If you are in a garbage collected language, failure to hold on to the source nodes will cause them to go silent.

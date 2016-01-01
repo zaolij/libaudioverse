@@ -6,6 +6,7 @@ import ctypes
 import collections
 import functools
 from . import _libaudioverse
+import six
 
 #These are not from libaudioverse.
 #Implement a method by which the public libaudioverse module may register its exception classes for error code translation.
@@ -59,10 +60,11 @@ def reverse_handle(handle):
     #Drill down up to twice, otherwise assume we passed in something safe.
     {{arg.name}} = getattr({{arg.name}}, 'handle', {{arg.name}})
     {{arg.name}} = getattr({{arg.name}}, 'handle', {{arg.name}})
-{%endif%}
-{%if arg.type.indirection == 1 and not arg.type.base == 'char'%}
+{%elif arg.type.indirection == 1 and arg.type.base == 'char'%}
+    {{arg.name}} = {{arg.name}}.encode('utf8') #All strings are contractually UTF8 when entering Libaudioverse.
+{%elif arg.type.indirection == 1%}
     if isinstance({{arg.name}}, collections.Sized):
-        if not isinstance({{arg.name}}, basestring):
+        if not (isinstance({{arg.name}}, six.binary_type) or isinstance({{arg.name}}, six.text_type)):
             {{arg.name}}_t = {{arg.type|ctypes_string(1)}}*len({{arg.name}})
             #Try to use the buffer interfaces, if we can.
             try:
@@ -78,7 +80,7 @@ def reverse_handle(handle):
 {%endfor%}
 {%endmacro%}
 
-{%for func_name, func_info in functions.iteritems()%}
+{%for func_name, func_info in functions.items()%}
 {%set friendly_name = func_name|without_lav|camelcase_to_underscores%}
 {%set input_arg_names = func_info.input_args|map(attribute='name')|list%}
 {%set output_arg_names = func_info.output_args|map(attribute='name')|list%}
@@ -100,10 +102,13 @@ def {{friendly_name}}({{input_arg_names|join(', ')}}):
         raise make_error_from_code(err)
     return {%for i in func_info.output_args -%}
 {%- if i.type.base=='LavHandle' and i.type.indirection == 1 -%}
-    reverse_handle({{i.name}}.value){%if not loop.last%}, {%endif%}
+    reverse_handle({{i.name}}.value)
+{%-elif i.type.base == 'char' and i.type.indirection == 2-%}{#Recall that the types show all of these with an extra level of pointer indirection.#}
+    {{i.name}}.value.decode('utf8') #All strings are contractually UTF8 when returned to us.
 {%- else -%}
-    getattr({{i.name}}, 'value', {{i.name}}){%if not loop.last%}, {%endif%}
+    getattr({{i.name}}, 'value', {{i.name}})
 {%-endif-%}
+{%-if not loop.last%}, {%endif-%}
 {%-endfor-%}
 {%endif%}
 

@@ -12,6 +12,7 @@ extern "C" {
 
 typedef int LavError;
 typedef int LavHandle;
+typedef void (*LavParameterlessCallback)(LavHandle nodeHandle, void* userdata);
 
 /**Does whatever is appropriate on a given platform to expose a Libaudioverse function publically.*/
 #ifdef _MSC_VER
@@ -60,7 +61,8 @@ enum Lav_ERRORS {
 	Lav_ERROR_OVERLAPPING_AUTOMATORS,
 
 	Lav_ERROR_CANNOT_CONNECT_TO_PROPERTY,
-
+	Lav_ERROR_BUFFER_IN_USE,
+	
 	Lav_ERROR_INTERNAL= 999,
 };
 
@@ -101,7 +103,9 @@ enum Lav_OBJECT_TYPES {
 	Lav_OBJTYPE_MULTIPANNER_NODE,
 	Lav_OBJTYPE_FEEDBACK_DELAY_NETWORK_NODE,
 
-	Lav_OBJTYPE_SQUARE_NODE,
+	Lav_OBJTYPE_ADDITIVE_SQUARE_NODE,
+	Lav_OBJTYPE_ADDITIVE_TRIANGLE_NODE,
+	Lav_OBJTYPE_ADDITIVE_SAW_NODE,
 	Lav_OBJTYPE_NOISE_NODE,
 	Lav_OBJTYPE_IIR_NODE,
 	Lav_OBJTYPE_GAIN_NODE,
@@ -121,6 +125,9 @@ enum Lav_OBJECT_TYPES {
 	Lav_OBJTYPE_ALLPASS_NODE,
 	Lav_OBJTYPE_NESTED_ALLPASS_NETWORK_NODE,
 	Lav_OBJTYPE_FDN_REVERB_NODE,
+	Lav_OBJTYPE_BLIT_NODE,
+	Lav_OBJTYPE_DC_BLOCKER_NODE,
+	Lav_OBJTYPE_LEAKY_INTEGRATOR_NODE,
 };
 
 /**Node states.*/
@@ -169,7 +176,7 @@ Lav_PUBLIC_FUNCTION LavError Lav_handleGetType(LavHandle handle, int* destinatio
 /**Configure and query logging.
 
 These functions may be used before library initialization, the intent being that you can get initialization logs.  These functions, like all other functions, cannot be used after library termination.*/
-typedef void (*LavLoggingCallback)(int level, const char* message, int is_final);
+typedef void (*LavLoggingCallback)(int level, const char* message);
 Lav_PUBLIC_FUNCTION LavError Lav_setLoggingCallback(LavLoggingCallback cb);
 Lav_PUBLIC_FUNCTION LavError Lav_getLoggingCallback(LavLoggingCallback* destination);
 Lav_PUBLIC_FUNCTION LavError Lav_setLoggingLevel(int level);
@@ -251,6 +258,7 @@ Lav_PUBLIC_FUNCTION LavError Lav_nodeConnectSimulation(LavHandle nodeHandle, int
 /**Connect a node's output to a properety of another node.*/
 Lav_PUBLIC_FUNCTION LavError Lav_nodeConnectProperty(LavHandle nodeHandle, int output, LavHandle otherHandle, int slot);
 Lav_PUBLIC_FUNCTION LavError Lav_nodeDisconnect(LavHandle nodeHandle, int output, LavHandle otherHandle, int input);
+Lav_PUBLIC_FUNCTION LavError Lav_nodeIsolate(LavHandle nodeHandle);
 
 /**Query maximum number of inputs and outputs.*/
 Lav_PUBLIC_FUNCTION LavError Lav_nodeGetInputConnectionCount(LavHandle nodeHandle, unsigned int* destination);
@@ -319,14 +327,6 @@ Lav_PUBLIC_FUNCTION LavError Lav_automationLinearRampToValue(LavHandle nodeHandl
 Lav_PUBLIC_FUNCTION LavError Lav_automationSet(LavHandle nodeHandle, int slot, double time, double value);
 Lav_PUBLIC_FUNCTION LavError Lav_automationEnvelope(LavHandle nodeHandle, int slot, double time, double duration, int valuesLength, double *values);
 
-/**events.
-Unlike callbacks, which are dedicated on a per-node basis, events fire in a background thread. It is safe to call the Libaudioverse API from a firing event.
-It is documented which of these will fire more than once.  Most events will wait for you to return from the handler before firing a duplicate event.  It is wise to be as quick as possible.*/
-EXTERN_FUNCTION typedef void (*LavEventCallback)(LavHandle cause, void* userdata);
-Lav_PUBLIC_FUNCTION LavError Lav_nodeGetEventHandler(LavHandle nodeHandle, int event, LavEventCallback *destination);
-Lav_PUBLIC_FUNCTION LavError Lav_nodeGetEventUserDataPointer(LavHandle nodeHandle, int event, void** destination);
-Lav_PUBLIC_FUNCTION LavError Lav_nodeSetEvent(LavHandle nodeHandle, int event, LavEventCallback handler, void* userData);
-
 /**Performs the node-specific reset operation.
 
 This does not reset properties, merely internal histories and the like.  Specifically what this means depends on the node; see the manual.*/
@@ -336,7 +336,9 @@ Lav_PUBLIC_FUNCTION LavError Lav_nodeReset(LavHandle nodeHandle);
 //also see libaudioverse3d.h.
 
 Lav_PUBLIC_FUNCTION LavError Lav_createSineNode(LavHandle simulationHandle, LavHandle* destination);
-Lav_PUBLIC_FUNCTION LavError Lav_createSquareNode(LavHandle simulationHandle, LavHandle* destination);
+Lav_PUBLIC_FUNCTION LavError Lav_createAdditiveSquareNode(LavHandle simulationHandle, LavHandle* destination);
+Lav_PUBLIC_FUNCTION LavError Lav_createAdditiveTriangleNode(LavHandle simulationHandle, LavHandle* destination);
+Lav_PUBLIC_FUNCTION LavError Lav_createAdditiveSawNode(LavHandle simulationHandle, LavHandle* destination);
 Lav_PUBLIC_FUNCTION LavError Lav_createNoiseNode(LavHandle simulationHandle, LavHandle* destination);
 
 Lav_PUBLIC_FUNCTION LavError Lav_createHrtfNode(LavHandle simulationHandle, const char* hrtfPath, LavHandle* destination);
@@ -353,6 +355,9 @@ Lav_PUBLIC_FUNCTION LavError Lav_createMultipannerNode(LavHandle simulationHandl
 
 Lav_PUBLIC_FUNCTION LavError Lav_createPushNode(LavHandle simulationHandle, unsigned int sr, unsigned int channels, LavHandle* destination);
 Lav_PUBLIC_FUNCTION LavError Lav_pushNodeFeed(LavHandle nodeHandle, unsigned int length, float* frames);
+Lav_PUBLIC_FUNCTION LavError Lav_pushNodeSetLowCallback(LavHandle nodeHandle, LavParameterlessCallback callback, void* userdata);
+Lav_PUBLIC_FUNCTION LavError Lav_pushNodeSetUnderrunCallback(LavHandle nodeHandle, LavParameterlessCallback callback, void* userdata);
+
 
 Lav_PUBLIC_FUNCTION LavError Lav_createBiquadNode(LavHandle simulationHandle, unsigned int channels, LavHandle* destination);
 
@@ -392,6 +397,7 @@ Lav_PUBLIC_FUNCTION LavError Lav_createChannelSplitterNode(LavHandle simulationH
 Lav_PUBLIC_FUNCTION LavError Lav_createChannelMergerNode(LavHandle simulationHandle, int channels, LavHandle* destination);
 
 Lav_PUBLIC_FUNCTION LavError Lav_createBufferNode(LavHandle simulationHandle, LavHandle* destination);
+Lav_PUBLIC_FUNCTION LavError Lav_bufferNodeSetEndCallback(LavHandle nodeHandle, LavParameterlessCallback callback, void* userdata);
 
 Lav_PUBLIC_FUNCTION LavError Lav_createBufferTimelineNode(LavHandle simulationHandle, int channels, LavHandle* destination);
 Lav_PUBLIC_FUNCTION LavError Lav_bufferTimelineNodeScheduleBuffer(LavHandle nodeHandle, LavHandle bufferHandle, double time, float pitchBend);
@@ -414,13 +420,14 @@ Lav_PUBLIC_FUNCTION LavError Lav_createPannerBankNode(LavHandle simulationHandle
 
 Lav_PUBLIC_FUNCTION LavError Lav_createCrossfaderNode(LavHandle simulationHandle, int channels, int inputs, LavHandle* destination);
 Lav_PUBLIC_FUNCTION LavError Lav_crossfaderNodeCrossfade(LavHandle nodeHandle, float duration, int input);
+Lav_PUBLIC_FUNCTION LavError Lav_crossfaderNodeSetFinishedCallback(LavHandle nodeHandle, LavParameterlessCallback callback, void* userdata);
 
 Lav_PUBLIC_FUNCTION LavError Lav_createOnePoleFilterNode(LavHandle simulationHandle, int channels, LavHandle* destination);
 
 Lav_PUBLIC_FUNCTION LavError Lav_createFirstOrderFilterNode(LavHandle simulationHandle, int channels, LavHandle* destination);
 Lav_PUBLIC_FUNCTION LavError Lav_firstOrderFilterNodeConfigureLowpass(LavHandle nodeHandle, float frequency);
 Lav_PUBLIC_FUNCTION LavError Lav_firstOrderFilterNodeConfigureHighpass(LavHandle nodeHandle, float frequency);
-Lav_PUBLIC_FUNCTION LavError Lav_firstOrderFilterNodeConfigureAllpass(LavHandle nodeHandle, float freequency);
+Lav_PUBLIC_FUNCTION LavError Lav_firstOrderFilterNodeConfigureAllpass(LavHandle nodeHandle, float frequency);
 
 Lav_PUBLIC_FUNCTION LavError Lav_createAllpassNode(LavHandle simulationHandle, int channels, int maxDelay, LavHandle* destination);
 
@@ -434,6 +441,12 @@ Lav_PUBLIC_FUNCTION LavError Lav_nestedAllpassNetworkNodeAppendReader(LavHandle 
 Lav_PUBLIC_FUNCTION LavError Lav_nestedAllpassNetworkNodeCompile(LavHandle nodeHandle);
 
 Lav_PUBLIC_FUNCTION LavError Lav_createFdnReverbNode(LavHandle simulationHandle, LavHandle* destination);
+
+Lav_PUBLIC_FUNCTION LavError Lav_createBlitNode(LavHandle simulationHandle, LavHandle* destination);
+
+Lav_PUBLIC_FUNCTION LavError Lav_createDcBlockerNode(LavHandle simulationHandle, int channels, LavHandle* destination);
+
+Lav_PUBLIC_FUNCTION LavError Lav_createLeakyIntegratorNode(LavHandle simulationHandle, int channels, LavHandle* destination);
 
 #ifdef __cplusplus
 }

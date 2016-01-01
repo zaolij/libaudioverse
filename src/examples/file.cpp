@@ -22,7 +22,7 @@ void endOfBufferCallback(LavHandle ignoredObject, void* ignored) {
 
 void main(int argc, char** args) {
 	if(argc != 2) {
-		printf("Syntax: %s <path>");
+		printf("Syntax: %s <path>", args[0]);
 		return;
 	}
 
@@ -40,7 +40,7 @@ void main(int argc, char** args) {
 	LavHandle limit;
 	ERRCHECK(Lav_createHardLimiterNode(simulation, 2, &limit));
 	ERRCHECK(Lav_nodeConnect(node, 0, limit, 0));
-	ERRCHECK(Lav_nodeSetEvent(node, Lav_BUFFER_END_EVENT, endOfBufferCallback, nullptr));
+	ERRCHECK(Lav_bufferNodeSetEndCallback(node, endOfBufferCallback, nullptr));
 	ERRCHECK(Lav_nodeConnectSimulation(limit, 0));
 	//enter the transducer loop.
 	char command[1024];
@@ -55,7 +55,7 @@ void main(int argc, char** args) {
 		while(*start == ' ') start+=1; //skip spaces.
 		sscanf(start, "%f", &value);
 		switch(command[0]) {
-			case 'p': Lav_nodeSetFloatProperty(node, Lav_BUFFER_PITCH_BEND, value); break;
+			case 'p': Lav_nodeSetDoubleProperty(node, Lav_BUFFER_RATE, value); break;
 			case 'v': Lav_nodeSetFloatProperty(node, Lav_NODE_MUL, value); break;
 			case 's': Lav_nodeSetDoubleProperty(node, Lav_BUFFER_POSITION, value); break;
 			case 'a': isPlaying = ! isPlaying; Lav_nodeSetIntProperty(node, Lav_NODE_STATE, isPlaying == false ? Lav_NODESTATE_PAUSED: Lav_NODESTATE_PLAYING); break;

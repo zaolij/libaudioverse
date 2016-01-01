@@ -13,6 +13,7 @@ compiler_c_flags: Flags used with .c files
 compiler_cxx_flags: Flags used with C++ files.
 linker_flags: Flags for the linker.
 build_type: The build type.
+root_dir: Absolute path to the root of the repository.
 """
 
 from pycparser import *
@@ -72,7 +73,7 @@ def get_git_revision():
 
 def get_flags():
     lines = []
-    with file(os.path.join(get_root_directory(), "build", "compiler_flags.txt")) as f:
+    with open(os.path.join(get_root_directory(), "build", "compiler_flags.txt")) as f:
         lines = [i for i in f]
     return {
         "build_type": lines[0].strip(),
@@ -86,15 +87,13 @@ def make_ast():
     #this gives us the root directory of the repository.
     root_directory = get_root_directory()
     input_file = os.path.join(root_directory, 'include', 'libaudioverse', 'binding.h')
-
     if sys.platform == 'win32':
         command = 'cl'
         args = '/nologo /EP ' + input_file
     else:
         command  = 'cpp'
         args = input_file
-
-    text = subprocess.check_output(command + ' ' + args, shell = True)
+    text =subprocess.check_output(command + ' ' + args, shell = True).decode() #This gives us bytes, but we're ascii anyway.
     #convert from windows to linux newlines, if needed.
     text = text.replace('\r\n', '\n')
 
@@ -147,7 +146,7 @@ def compute_type_info(node, typedefs):
         quals[indirection] = currently_examining.quals
         currently_examining = currently_examining.type
     newquals = dict()
-    for i, j in quals.iteritems():
+    for i, j in quals.items():
         newquals[indirection-i+1] = j
     quals=newquals
     if isinstance(currently_examining, TypeDecl):
@@ -193,8 +192,8 @@ def get_all_info():
 
     #remove anything that ends in _MAX from constants_by_enum at this point.
     #rationale: the _MAX constants are needed in very specific places, but not by code that auto-binds enums.
-    for i in constants_by_enum.itervalues():
-        for j in dict(i).iterkeys():
+    for i in constants_by_enum.values():
+        for j in dict(i).keys():
             if j.endswith('_MAX'):
                 del i[j]
 
@@ -221,6 +220,7 @@ def get_all_info():
 
     all_info['important_enums'] = important_enums
     all_info['git_revision'] = get_git_revision()
+    all_info['root_dir'] = get_root_directory()
     all_info.update(get_flags()) #get the compiler and linker flags, etc.
     all_info_cache =all_info
     return copy.deepcopy(all_info)
